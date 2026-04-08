@@ -41,42 +41,62 @@ def get_today_menu():
         with urllib.request.urlopen(req, context=context) as response:
             html = response.read().decode('utf-8')
             soup = BeautifulSoup(html, 'html.parser')
-            days = soup.select('ul.menu_list > li')
+            
+            # 각 날짜별 항목 (보통 li 또는 특정 div)
+            days = soup.select('.menu_list > li') or soup.select('.bistro_list > li')
             
             for day in days:
-                date_text = day.select_one('.date').get_text(strip=True)
-                if target_date_str in date_text:
-                    menu_data["date"] = date_text # 실제 페이지의 날짜 텍스트 사용
-                    items = day.select('.menu_item')
+                dd_el = day.select_one('.dd')
+                if not dd_el: continue
+                
+                date_text = dd_el.get_text(strip=True)
+                if target_date_str == date_text:
+                    # 실제 날짜 텍스트 (예: 2026.04.08 수요일)
+                    full_date = day.select_one('.day').get_text(" ", strip=True) if day.select_one('.day') else menu_data["date"]
+                    menu_data["date"] = full_date
+                    
+                    items = day.select('.carte_item')
                     for item in items:
-                        m_type = item.select_one('.type').get_text(strip=True)
-                        m_content = item.select_one('.content').get_text(strip=True)
+                        title_el = item.select_one('.carte_tit')
+                        content_el = item.select_one('.carte_text')
+                        if not title_el or not content_el: continue
                         
-                        if "조식" in m_type: menu_data["student_cafeteria"]["breakfast"] = m_content
+                        m_type = title_el.get_text(strip=True)
+                        m_content = content_el.get_text("\n", strip=True) # 줄바꿈 유지
+                        
+                        if "조식" in m_type: 
+                            menu_data["student_cafeteria"]["breakfast"] = m_content
                         elif "중식" in m_type:
-                            if "한식" in m_content or "백반" in m_content:
-                                menu_data["student_cafeteria"]["lunch_korean"] = m_content
-                            elif "양식" in m_content or "일품" in m_content:
-                                menu_data["student_cafeteria"]["lunch_western"] = m_content
+                            if "**한식**" in m_content:
+                                parts = m_content.split("**양식**")
+                                menu_data["student_cafeteria"]["lunch_korean"] = parts[0].replace("**한식**", "").strip()
+                                if len(parts) > 1:
+                                    menu_data["student_cafeteria"]["lunch_western"] = parts[1].strip()
                             else:
                                 menu_data["student_cafeteria"]["lunch_korean"] = m_content
-                        elif "분식" in m_type: menu_data["student_cafeteria"]["snack"] = m_content
+                        elif "분식" in m_type: 
+                            menu_data["student_cafeteria"]["snack"] = m_content
 
         # 교직원식당 크롤링
         req = urllib.request.Request(staff_url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, context=context) as response:
             html = response.read().decode('utf-8')
             soup = BeautifulSoup(html, 'html.parser')
-            days = soup.select('ul.menu_list > li')
+            days = soup.select('.menu_list > li') or soup.select('.bistro_list > li')
+            
             for day in days:
-                date_text = day.select_one('.date').get_text(strip=True)
-                if target_date_str in date_text:
-                    items = day.select('.menu_item')
+                dd_el = day.select_one('.dd')
+                if not dd_el: continue
+                if target_date_str == dd_el.get_text(strip=True):
+                    items = day.select('.carte_item')
                     for item in items:
-                        m_type = item.select_one('.type').get_text(strip=True)
-                        m_content = item.select_one('.content').get_text(strip=True)
-                        if "중식" in m_type:
-                            menu_data["staff_cafeteria"]["lunch"] = m_content
+                        title_el = item.select_one('.carte_tit')
+                        content_el = item.select_one('.carte_text')
+                        if title_el and "중식" in title_el.get_text():
+                            menu_data["staff_cafeteria"]["lunch"] = content_el.get_text("\n", strip=True)
+                        
+    except Exception as e:
+        print(f"크롤링 중 오류 발생: {e}")
                         
     except Exception as e:
         print(f"크롤링 중 오류 발생: {e}")
